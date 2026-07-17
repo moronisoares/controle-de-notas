@@ -151,6 +151,14 @@ private fun InvoiceCard(
                         style = MaterialTheme.typography.bodySmall
                     )
                 }
+                if (invoice.invoiceCode.isNotBlank()) {
+                    Text(
+                        text = "Código: ${invoice.invoiceCode}",
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                    )
+                }
                 Text(
                     text = formatInvoiceDate(invoice.invoiceDate),
                     style = MaterialTheme.typography.bodySmall,

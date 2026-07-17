@@ -1,5 +1,7 @@
 package com.example.controlenotas.ui
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -22,6 +24,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material3.Button
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
@@ -40,6 +43,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -51,12 +55,15 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import coil.compose.AsyncImage
 import com.example.controlenotas.data.Category
 import com.example.controlenotas.util.formatInvoiceDate
 import com.example.controlenotas.util.parseCentsOrNull
 import com.example.controlenotas.util.todayInvoiceMillis
+import com.journeyapps.barcodescanner.ScanContract
+import com.journeyapps.barcodescanner.ScanOptions
 import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -71,6 +78,7 @@ fun AddInvoiceScreen(
     var selectedCategory by remember { mutableStateOf<Category?>(null) }
     var costText by remember { mutableStateOf("") }
     var description by remember { mutableStateOf("") }
+    var invoiceCode by remember { mutableStateOf("") }
     var photoPath by remember { mutableStateOf<String?>(null) }
     var photoUri by remember { mutableStateOf<Uri?>(null) }
 
@@ -91,7 +99,38 @@ fun AddInvoiceScreen(
         }
     }
 
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { /* resultado tratado ao acionar a câmera */ }
+
+    LaunchedEffect(Unit) {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+        }
+    }
+
+    val scanCode = rememberLauncherForActivityResult(ScanContract()) { result ->
+        result.contents?.let { invoiceCode = it }
+    }
+
+    fun launchScan() {
+        val options = ScanOptions().apply {
+            setPrompt("Aponte para o QR Code ou código de barras da nota")
+            setBeepEnabled(true)
+            setOrientationLocked(false)
+        }
+        scanCode.launch(options)
+    }
+
     fun launchCamera() {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+            return
+        }
         val imagesDir = File(context.filesDir, "images").apply { mkdirs() }
         val file = File(imagesDir, "nota_${System.currentTimeMillis()}.jpg")
         val uri = FileProvider.getUriForFile(
@@ -259,13 +298,29 @@ fun AddInvoiceScreen(
                 modifier = Modifier.fillMaxWidth()
             )
 
+            OutlinedTextField(
+                value = invoiceCode,
+                onValueChange = { invoiceCode = it },
+                label = { Text("Código / chave de acesso (opcional)") },
+                placeholder = { Text("Leia o QR Code ou digite a chave") },
+                trailingIcon = {
+                    IconButton(onClick = { launchScan() }) {
+                        Icon(
+                            Icons.Filled.QrCodeScanner,
+                            contentDescription = "Ler código da nota"
+                        )
+                    }
+                },
+                modifier = Modifier.fillMaxWidth()
+            )
+
             Button(
                 onClick = {
                     val cents = parseCentsOrNull(costText)
                     val category = selectedCategory
                     val path = photoPath
                     if (cents != null && cents > 0 && category != null && path != null) {
-                        viewModel.addInvoice(category, cents, path, description.trim(), invoiceDateMillis)
+                        viewModel.addInvoice(category, cents, path, description.trim(), invoiceCode.trim(), invoiceDateMillis)
                         onDone()
                     }
                 },

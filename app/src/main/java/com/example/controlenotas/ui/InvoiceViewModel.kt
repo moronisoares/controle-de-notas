@@ -29,6 +29,7 @@ class InvoiceViewModel(private val dao: InvoiceDao) : ViewModel() {
         costCents: Long,
         imagePath: String,
         description: String,
+        invoiceCode: String,
         invoiceDate: Long
     ) {
         viewModelScope.launch {
@@ -38,6 +39,7 @@ class InvoiceViewModel(private val dao: InvoiceDao) : ViewModel() {
                     costCents = costCents,
                     imagePath = imagePath,
                     description = description,
+                    invoiceCode = invoiceCode,
                     invoiceDate = invoiceDate,
                     createdAt = System.currentTimeMillis()
                 )

@@ -8,6 +8,7 @@ import androidx.room.PrimaryKey
  *
  * @param costCents valor armazenado em centavos para evitar erros de ponto flutuante.
  * @param imagePath caminho absoluto da foto salva no armazenamento interno do app.
+ * @param invoiceCode código/chave de acesso lido do QR Code ou código de barras da nota.
  * @param invoiceDate data da nota (meia-noite UTC) informada pelo usuário.
  * @param createdAt data/hora do registro em milissegundos (epoch).
  */
@@ -18,6 +19,7 @@ data class Invoice(
     val costCents: Long,
     val imagePath: String,
     val description: String,
+    val invoiceCode: String,
     val invoiceDate: Long,
     val createdAt: Long
 )

@@ -2,6 +2,7 @@ package com.example.controlenotas.util
 
 import android.content.Context
 import android.content.Intent
+import android.util.Base64
 import androidx.core.content.FileProvider
 import com.example.controlenotas.data.Category
 import com.example.controlenotas.data.Invoice
@@ -25,12 +26,13 @@ private val fileNameFormat = SimpleDateFormat("yyyyMMdd_HHmmss", Locale("pt", "B
  */
 fun buildCsv(invoices: List<Invoice>): String {
     val sb = StringBuilder()
-    sb.append("Data da nota;Categoria;Valor (R$);Descrição;Arquivo da imagem\r\n")
+    sb.append("Data da nota;Categoria;Valor (R$);Código / Chave de acesso;Descrição;Arquivo da imagem\r\n")
     for (inv in invoices) {
         val fields = listOf(
             formatInvoiceDate(inv.invoiceDate),
             Category.fromName(inv.category).displayName,
             formatCents(inv.costCents),
+            inv.invoiceCode,
             inv.description,
             File(inv.imagePath).name
         )
@@ -62,20 +64,43 @@ fun buildHtml(invoices: List<Invoice>): String {
     sb.append("</style>\n</head>\n<body>\n")
     sb.append("<h1>Relatório de notas</h1>\n")
     sb.append("<table>\n<tr>")
-    sb.append("<th>Data da nota</th><th>Categoria</th><th>Valor (R$)</th><th>Descrição</th><th>Foto</th>")
+    sb.append("<th>Data da nota</th><th>Categoria</th><th>Valor (R$)</th><th>Código / Chave de acesso</th><th>Descrição</th><th>Foto</th>")
     sb.append("</tr>\n")
     for (inv in invoices) {
-        val name = File(inv.imagePath).name
         sb.append("<tr>")
         sb.append("<td>").append(escapeHtml(formatInvoiceDate(inv.invoiceDate))).append("</td>")
         sb.append("<td>").append(escapeHtml(Category.fromName(inv.category).displayName)).append("</td>")
         sb.append("<td>").append(escapeHtml(formatCents(inv.costCents))).append("</td>")
+        sb.append("<td>").append(codeCell(inv.invoiceCode)).append("</td>")
         sb.append("<td>").append(escapeHtml(inv.description)).append("</td>")
-        sb.append("<td><img src=\"imagens/").append(escapeHtml(name)).append("\" alt=\"nota\"></td>")
+        sb.append("<td>").append(imageTag(inv.imagePath)).append("</td>")
         sb.append("</tr>\n")
     }
     sb.append("</table>\n</body>\n</html>\n")
     return sb.toString()
+}
+
+/** Renderiza o código; se for uma URL (QR da NFC-e), vira um link clicável. */
+private fun codeCell(code: String): String {
+    if (code.isBlank()) return ""
+    val safe = escapeHtml(code)
+    return if (code.startsWith("http://") || code.startsWith("https://")) {
+        "<a href=\"$safe\">$safe</a>"
+    } else {
+        safe
+    }
+}
+
+/** Incorpora a foto no próprio HTML (base64), garantindo que ela sempre apareça. */
+private fun imageTag(imagePath: String): String {
+    val file = File(imagePath)
+    if (!file.exists()) return "(sem foto)"
+    return try {
+        val base64 = Base64.encodeToString(file.readBytes(), Base64.NO_WRAP)
+        "<img src=\"data:image/jpeg;base64,$base64\" alt=\"nota\">"
+    } catch (e: Exception) {
+        "(sem foto)"
+    }
 }
 
 private fun escapeHtml(text: String): String =
