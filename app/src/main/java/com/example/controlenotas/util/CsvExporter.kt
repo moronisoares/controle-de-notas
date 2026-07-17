@@ -9,6 +9,7 @@ import com.example.controlenotas.data.Invoice
 import java.io.BufferedOutputStream
 import java.io.File
 import java.io.FileOutputStream
+import java.text.Normalizer
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -20,26 +21,34 @@ private val fileNameFormat = SimpleDateFormat("yyyyMMdd_HHmmss", Locale("pt", "B
 /**
  * Monta o conteúdo do CSV com os dados das notas.
  *
- * Separador ";" e decimal "," (padrão do Excel em pt-BR). O arquivo é
- * gravado em UTF-8 com BOM, que faz o Excel, o Google Sheets e os
- * visualizadores de celular exibirem os acentos corretamente.
+ * Separador ";" e decimal "," (padrão do Excel em pt-BR). Todos os acentos e
+ * caracteres especiais são removidos (texto ASCII puro), garantindo que a
+ * abertura funcione em qualquer programa, sem quebrar os caracteres.
+ * Não inclui o nome do arquivo da foto — apenas o código de acesso da nota.
  */
 fun buildCsv(invoices: List<Invoice>): String {
     val sb = StringBuilder()
-    sb.append("Data da nota;Categoria;Valor (R$);Código / Chave de acesso;Descrição;Arquivo da imagem\r\n")
+    sb.append("Data da nota;Categoria;Valor (R$);Codigo de acesso;Descricao\r\n")
     for (inv in invoices) {
         val fields = listOf(
             formatInvoiceDate(inv.invoiceDate),
             Category.fromName(inv.category).displayName,
             formatCents(inv.costCents),
             inv.invoiceCode,
-            inv.description,
-            File(inv.imagePath).name
+            inv.description
         )
-        sb.append(fields.joinToString(";") { escapeCsv(it) })
+        sb.append(fields.joinToString(";") { escapeCsv(stripSpecialChars(it)) })
         sb.append("\r\n")
     }
     return sb.toString()
+}
+
+/** Remove acentos e qualquer caractere fora do ASCII imprimível. */
+private fun stripSpecialChars(text: String): String {
+    val normalized = Normalizer.normalize(text, Normalizer.Form.NFD)
+    return normalized
+        .replace(Regex("\\p{Mn}+"), "")        // marcas de acento (ex.: ~ de ã)
+        .replace(Regex("[^\\x20-\\x7E]"), "")   // demais caracteres nao-ASCII
 }
 
 private fun escapeCsv(field: String): String {
@@ -123,9 +132,7 @@ fun exportAndShare(context: Context, invoices: List<Invoice>) {
 
     ZipOutputStream(BufferedOutputStream(FileOutputStream(zipFile))).use { zos ->
         zos.putNextEntry(ZipEntry("notas.csv"))
-        // BOM UTF-8 para que o Excel reconheça a codificação e mostre os acentos.
-        zos.write(byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte()))
-        zos.write(buildCsv(invoices).toByteArray(Charsets.UTF_8))
+        zos.write(buildCsv(invoices).toByteArray(Charsets.US_ASCII))
         zos.closeEntry()
 
         zos.putNextEntry(ZipEntry("relatorio.html"))
@@ -155,4 +162,28 @@ fun exportAndShare(context: Context, invoices: List<Invoice>) {
         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
     }
     context.startActivity(Intent.createChooser(intent, "Exportar notas"))
+}
+
+/**
+ * Gera apenas o arquivo notas.csv (sem fotos) e abre a folha de
+ * compartilhamento. Contém somente os dados e o código de acesso da nota.
+ */
+fun exportCsvOnly(context: Context, invoices: List<Invoice>) {
+    val dir = File(context.cacheDir, "exports").apply { mkdirs() }
+    val csvFile = File(dir, "notas_${fileNameFormat.format(Date())}.csv")
+    csvFile.writeBytes(buildCsv(invoices).toByteArray(Charsets.US_ASCII))
+
+    val uri = FileProvider.getUriForFile(
+        context,
+        "${context.packageName}.fileprovider",
+        csvFile
+    )
+
+    val intent = Intent(Intent.ACTION_SEND).apply {
+        type = "text/csv"
+        putExtra(Intent.EXTRA_STREAM, uri)
+        putExtra(Intent.EXTRA_SUBJECT, "Exportação de notas (CSV)")
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    }
+    context.startActivity(Intent.createChooser(intent, "Exportar CSV"))
 }

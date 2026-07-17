@@ -4,6 +4,7 @@ package com.example.controlenotas.data
 enum class Category(val displayName: String) {
     AGUA("Água"),
     LUZ("Luz"),
+    INTERNET("Internet"),
     ALIMENTACAO("Alimentação"),
     DESPESAS_MEDICAS("Despesas médicas"),
     CURSOS_TREINAMENTOS("Cursos e treinamentos");

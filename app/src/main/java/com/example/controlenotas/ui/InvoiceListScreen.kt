@@ -18,6 +18,8 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material3.Card
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
@@ -30,6 +32,9 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -42,6 +47,7 @@ import coil.compose.AsyncImage
 import com.example.controlenotas.data.Category
 import com.example.controlenotas.data.Invoice
 import com.example.controlenotas.util.exportAndShare
+import com.example.controlenotas.util.exportCsvOnly
 import com.example.controlenotas.util.formatCents
 import com.example.controlenotas.util.formatInvoiceDate
 import java.io.File
@@ -54,6 +60,7 @@ fun InvoiceListScreen(
 ) {
     val context = LocalContext.current
     val invoices by viewModel.invoices.collectAsState()
+    var showExportMenu by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -65,11 +72,32 @@ fun InvoiceListScreen(
                     actionIconContentColor = MaterialTheme.colorScheme.onPrimary
                 ),
                 actions = {
-                    IconButton(
-                        enabled = invoices.isNotEmpty(),
-                        onClick = { exportAndShare(context, invoices) }
-                    ) {
-                        Icon(Icons.Filled.FileDownload, contentDescription = "Exportar notas")
+                    Box {
+                        IconButton(
+                            enabled = invoices.isNotEmpty(),
+                            onClick = { showExportMenu = true }
+                        ) {
+                            Icon(Icons.Filled.FileDownload, contentDescription = "Exportar")
+                        }
+                        DropdownMenu(
+                            expanded = showExportMenu,
+                            onDismissRequest = { showExportMenu = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("Exportar CSV") },
+                                onClick = {
+                                    showExportMenu = false
+                                    exportCsvOnly(context, invoices)
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Exportar CSV + fotos") },
+                                onClick = {
+                                    showExportMenu = false
+                                    exportAndShare(context, invoices)
+                                }
+                            )
+                        }
                     }
                 }
             )
