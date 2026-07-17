@@ -21,7 +21,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material3.Button
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -32,8 +35,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -49,7 +54,9 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import coil.compose.AsyncImage
 import com.example.controlenotas.data.Category
+import com.example.controlenotas.util.formatInvoiceDate
 import com.example.controlenotas.util.parseCentsOrNull
+import com.example.controlenotas.util.todayInvoiceMillis
 import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -70,6 +77,8 @@ fun AddInvoiceScreen(
     var pendingPath by remember { mutableStateOf<String?>(null) }
     var pendingUri by remember { mutableStateOf<Uri?>(null) }
     var categoryExpanded by remember { mutableStateOf(false) }
+    var invoiceDateMillis by remember { mutableStateOf(todayInvoiceMillis()) }
+    var showDatePicker by remember { mutableStateOf(false) }
 
     val takePicture = rememberLauncherForActivityResult(
         ActivityResultContracts.TakePicture()
@@ -98,6 +107,24 @@ fun AddInvoiceScreen(
     val parsedCents = parseCentsOrNull(costText)
     val canSave = photoPath != null && selectedCategory != null &&
         parsedCents != null && parsedCents > 0
+
+    if (showDatePicker) {
+        val dateState = rememberDatePickerState(initialSelectedDateMillis = invoiceDateMillis)
+        DatePickerDialog(
+            onDismissRequest = { showDatePicker = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    dateState.selectedDateMillis?.let { invoiceDateMillis = it }
+                    showDatePicker = false
+                }) { Text("OK") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDatePicker = false }) { Text("Cancelar") }
+            }
+        ) {
+            DatePicker(state = dateState)
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -165,6 +192,24 @@ fun AddInvoiceScreen(
                 )
             }
 
+            Box {
+                OutlinedTextField(
+                    value = formatInvoiceDate(invoiceDateMillis),
+                    onValueChange = {},
+                    readOnly = true,
+                    label = { Text("Data da nota") },
+                    trailingIcon = {
+                        Icon(Icons.Filled.DateRange, contentDescription = "Escolher data")
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Box(
+                    modifier = Modifier
+                        .matchParentSize()
+                        .clickable { showDatePicker = true }
+                )
+            }
+
             ExposedDropdownMenuBox(
                 expanded = categoryExpanded,
                 onExpandedChange = { categoryExpanded = it }
@@ -220,7 +265,7 @@ fun AddInvoiceScreen(
                     val category = selectedCategory
                     val path = photoPath
                     if (cents != null && cents > 0 && category != null && path != null) {
-                        viewModel.addInvoice(category, cents, path, description.trim())
+                        viewModel.addInvoice(category, cents, path, description.trim(), invoiceDateMillis)
                         onDone()
                     }
                 },

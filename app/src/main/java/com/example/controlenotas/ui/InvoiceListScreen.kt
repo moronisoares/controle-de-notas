@@ -41,14 +41,10 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.example.controlenotas.data.Category
 import com.example.controlenotas.data.Invoice
-import com.example.controlenotas.util.exportAndShareCsv
+import com.example.controlenotas.util.exportAndShare
 import com.example.controlenotas.util.formatCents
+import com.example.controlenotas.util.formatInvoiceDate
 import java.io.File
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
-
-private val displayDateFormat = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale("pt", "BR"))
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -71,9 +67,9 @@ fun InvoiceListScreen(
                 actions = {
                     IconButton(
                         enabled = invoices.isNotEmpty(),
-                        onClick = { exportAndShareCsv(context, invoices) }
+                        onClick = { exportAndShare(context, invoices) }
                     ) {
-                        Icon(Icons.Filled.FileDownload, contentDescription = "Exportar CSV")
+                        Icon(Icons.Filled.FileDownload, contentDescription = "Exportar notas")
                     }
                 }
             )
@@ -156,7 +152,7 @@ private fun InvoiceCard(
                     )
                 }
                 Text(
-                    text = displayDateFormat.format(Date(invoice.createdAt)),
+                    text = formatInvoiceDate(invoice.invoiceDate),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

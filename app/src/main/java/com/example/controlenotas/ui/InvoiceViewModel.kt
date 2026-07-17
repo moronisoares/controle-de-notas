@@ -28,7 +28,8 @@ class InvoiceViewModel(private val dao: InvoiceDao) : ViewModel() {
         category: Category,
         costCents: Long,
         imagePath: String,
-        description: String
+        description: String,
+        invoiceDate: Long
     ) {
         viewModelScope.launch {
             dao.insert(
@@ -37,6 +38,7 @@ class InvoiceViewModel(private val dao: InvoiceDao) : ViewModel() {
                     costCents = costCents,
                     imagePath = imagePath,
                     description = description,
+                    invoiceDate = invoiceDate,
                     createdAt = System.currentTimeMillis()
                 )
             )

@@ -3,6 +3,7 @@ package com.example.controlenotas.util
 import com.example.controlenotas.data.Category
 import com.example.controlenotas.data.Invoice
 import java.util.Calendar
+import java.util.TimeZone
 
 private val monthNames = arrayOf(
     "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
@@ -32,10 +33,10 @@ data class MonthSummary(
 fun buildMonthlySummaries(invoices: List<Invoice>): List<MonthSummary> {
     if (invoices.isEmpty()) return emptyList()
 
-    val calendar = Calendar.getInstance()
+    val calendar = Calendar.getInstance(TimeZone.getTimeZone("UTC"))
     // Chave = ano * 100 + mês (1-12), preservando ordenação cronológica.
     val grouped = invoices.groupBy { invoice ->
-        calendar.timeInMillis = invoice.createdAt
+        calendar.timeInMillis = invoice.invoiceDate
         val year = calendar.get(Calendar.YEAR)
         val month = calendar.get(Calendar.MONTH) + 1
         year * 100 + month

@@ -8,6 +8,7 @@ import androidx.room.PrimaryKey
  *
  * @param costCents valor armazenado em centavos para evitar erros de ponto flutuante.
  * @param imagePath caminho absoluto da foto salva no armazenamento interno do app.
+ * @param invoiceDate data da nota (meia-noite UTC) informada pelo usuário.
  * @param createdAt data/hora do registro em milissegundos (epoch).
  */
 @Entity(tableName = "invoices")
@@ -17,5 +18,6 @@ data class Invoice(
     val costCents: Long,
     val imagePath: String,
     val description: String,
+    val invoiceDate: Long,
     val createdAt: Long
 )
