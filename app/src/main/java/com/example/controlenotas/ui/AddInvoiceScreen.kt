@@ -59,6 +59,8 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import coil.compose.AsyncImage
 import com.example.controlenotas.data.Category
+import com.example.controlenotas.data.Invoice
+import com.example.controlenotas.util.formatCents
 import com.example.controlenotas.util.formatInvoiceDate
 import com.example.controlenotas.util.parseCentsOrNull
 import com.example.controlenotas.util.todayInvoiceMillis
@@ -70,22 +72,23 @@ import java.io.File
 @Composable
 fun AddInvoiceScreen(
     viewModel: InvoiceViewModel,
+    existing: Invoice? = null,
     onDone: () -> Unit,
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
 
-    var selectedCategory by remember { mutableStateOf<Category?>(null) }
-    var costText by remember { mutableStateOf("") }
-    var description by remember { mutableStateOf("") }
-    var invoiceCode by remember { mutableStateOf("") }
-    var photoPath by remember { mutableStateOf<String?>(null) }
-    var photoUri by remember { mutableStateOf<Uri?>(null) }
+    var selectedCategory by remember { mutableStateOf(existing?.let { Category.fromName(it.category) }) }
+    var costText by remember { mutableStateOf(existing?.let { formatCents(it.costCents) } ?: "") }
+    var description by remember { mutableStateOf(existing?.description ?: "") }
+    var invoiceCode by remember { mutableStateOf(existing?.invoiceCode ?: "") }
+    var photoPath by remember { mutableStateOf(existing?.imagePath) }
+    var photoUri by remember { mutableStateOf(existing?.imagePath?.let { Uri.fromFile(File(it)) }) }
 
     var pendingPath by remember { mutableStateOf<String?>(null) }
     var pendingUri by remember { mutableStateOf<Uri?>(null) }
     var categoryExpanded by remember { mutableStateOf(false) }
-    var invoiceDateMillis by remember { mutableStateOf(todayInvoiceMillis()) }
+    var invoiceDateMillis by remember { mutableStateOf(existing?.invoiceDate ?: todayInvoiceMillis()) }
     var showDatePicker by remember { mutableStateOf(false) }
 
     val takePicture = rememberLauncherForActivityResult(
@@ -168,7 +171,7 @@ fun AddInvoiceScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Nova nota") },
+                title = { Text(if (existing == null) "Nova nota" else "Editar nota") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.Filled.ArrowBack, contentDescription = "Voltar")
@@ -320,7 +323,21 @@ fun AddInvoiceScreen(
                     val category = selectedCategory
                     val path = photoPath
                     if (cents != null && cents > 0 && category != null && path != null) {
-                        viewModel.addInvoice(category, cents, path, description.trim(), invoiceCode.trim(), invoiceDateMillis)
+                        if (existing == null) {
+                            viewModel.addInvoice(category, cents, path, description.trim(), invoiceCode.trim(), invoiceDateMillis)
+                        } else {
+                            viewModel.updateInvoice(
+                                existing.copy(
+                                    category = category.name,
+                                    costCents = cents,
+                                    imagePath = path,
+                                    description = description.trim(),
+                                    invoiceCode = invoiceCode.trim(),
+                                    invoiceDate = invoiceDateMillis
+                                ),
+                                previousImagePath = existing.imagePath
+                            )
+                        }
                         onDone()
                     }
                 },

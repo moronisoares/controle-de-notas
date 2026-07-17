@@ -13,6 +13,7 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -20,10 +21,12 @@ import androidx.navigation.NavController
 import androidx.navigation.NavDestination
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import com.example.controlenotas.data.AppDatabase
 import com.example.controlenotas.ui.AddInvoiceScreen
 import com.example.controlenotas.ui.InvoiceListScreen
@@ -87,7 +90,8 @@ private fun AppNavHost(factory: InvoiceViewModelFactory) {
             composable(ROUTE_LIST) {
                 InvoiceListScreen(
                     viewModel = viewModel,
-                    onAddClick = { navController.navigate(ROUTE_ADD) }
+                    onAddClick = { navController.navigate(ROUTE_ADD) },
+                    onInvoiceClick = { invoice -> navController.navigate("edit/${invoice.id}") }
                 )
             }
             composable(ROUTE_SUMMARY) {
@@ -100,6 +104,23 @@ private fun AppNavHost(factory: InvoiceViewModelFactory) {
                     onBack = { navController.popBackStack() }
                 )
             }
+            composable(
+                route = ROUTE_EDIT,
+                arguments = listOf(navArgument("invoiceId") { type = NavType.LongType })
+            ) { entry ->
+                val id = entry.arguments?.getLong("invoiceId") ?: -1L
+                val invoice = viewModel.getInvoice(id)
+                if (invoice == null) {
+                    LaunchedEffect(Unit) { navController.popBackStack() }
+                } else {
+                    AddInvoiceScreen(
+                        viewModel = viewModel,
+                        existing = invoice,
+                        onDone = { navController.popBackStack() },
+                        onBack = { navController.popBackStack() }
+                    )
+                }
+            }
         }
     }
 }
@@ -107,6 +128,7 @@ private fun AppNavHost(factory: InvoiceViewModelFactory) {
 private const val ROUTE_LIST = "list"
 private const val ROUTE_SUMMARY = "summary"
 private const val ROUTE_ADD = "add"
+private const val ROUTE_EDIT = "edit/{invoiceId}"
 
 private fun NavDestination?.isRoute(route: String): Boolean =
     this?.hierarchy?.any { it.route == route } == true

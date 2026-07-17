@@ -53,6 +53,17 @@ class InvoiceViewModel(private val dao: InvoiceDao) : ViewModel() {
             runCatching { File(invoice.imagePath).delete() }
         }
     }
+
+    fun updateInvoice(invoice: Invoice, previousImagePath: String?) {
+        viewModelScope.launch {
+            dao.update(invoice)
+            if (previousImagePath != null && previousImagePath != invoice.imagePath) {
+                runCatching { File(previousImagePath).delete() }
+            }
+        }
+    }
+
+    fun getInvoice(id: Long): Invoice? = invoices.value.firstOrNull { it.id == id }
 }
 
 class InvoiceViewModelFactory(private val dao: InvoiceDao) : ViewModelProvider.Factory {

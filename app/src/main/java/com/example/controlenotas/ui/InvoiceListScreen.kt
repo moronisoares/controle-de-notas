@@ -1,5 +1,6 @@
 package com.example.controlenotas.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,6 +18,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.FileDownload
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -27,6 +29,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -56,11 +59,13 @@ import java.io.File
 @Composable
 fun InvoiceListScreen(
     viewModel: InvoiceViewModel,
-    onAddClick: () -> Unit
+    onAddClick: () -> Unit,
+    onInvoiceClick: (Invoice) -> Unit
 ) {
     val context = LocalContext.current
     val invoices by viewModel.invoices.collectAsState()
     var showExportMenu by remember { mutableStateOf(false) }
+    var invoiceToDelete by remember { mutableStateOf<Invoice?>(null) }
 
     Scaffold(
         topBar = {
@@ -133,20 +138,44 @@ fun InvoiceListScreen(
                 items(invoices, key = { it.id }) { invoice ->
                     InvoiceCard(
                         invoice = invoice,
-                        onDelete = { viewModel.deleteInvoice(invoice) }
+                        onClick = { onInvoiceClick(invoice) },
+                        onDelete = { invoiceToDelete = invoice }
                     )
                 }
             }
         }
+    }
+
+    val pendingDelete = invoiceToDelete
+    if (pendingDelete != null) {
+        AlertDialog(
+            onDismissRequest = { invoiceToDelete = null },
+            title = { Text("Excluir nota") },
+            text = { Text("Deseja realmente excluir esta nota? Esta a\u00e7\u00e3o n\u00e3o pode ser desfeita.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.deleteInvoice(pendingDelete)
+                    invoiceToDelete = null
+                }) { Text("Excluir") }
+            },
+            dismissButton = {
+                TextButton(onClick = { invoiceToDelete = null }) { Text("Cancelar") }
+            }
+        )
     }
 }
 
 @Composable
 private fun InvoiceCard(
     invoice: Invoice,
+    onClick: () -> Unit,
     onDelete: () -> Unit
 ) {
-    Card(modifier = Modifier.fillMaxWidth()) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() }
+    ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
