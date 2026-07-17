@@ -27,3 +27,13 @@ fun todayInvoiceMillis(): Long {
     )
     return utc.timeInMillis
 }
+
+/** Ano (UTC) de uma data de nota. */
+fun yearOf(millis: Long): Int {
+    val cal = Calendar.getInstance(UTC)
+    cal.timeInMillis = millis
+    return cal.get(Calendar.YEAR)
+}
+
+/** Ano atual, coerente com a forma como as datas das notas são armazenadas. */
+fun currentInvoiceYear(): Int = yearOf(todayInvoiceMillis())

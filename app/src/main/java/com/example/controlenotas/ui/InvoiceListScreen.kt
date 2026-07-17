@@ -16,6 +16,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material3.AlertDialog
@@ -27,6 +29,7 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -64,6 +67,8 @@ fun InvoiceListScreen(
 ) {
     val context = LocalContext.current
     val invoices by viewModel.invoices.collectAsState()
+    val availableYears by viewModel.availableYears.collectAsState()
+    val selectedYear by viewModel.selectedYear.collectAsState()
     var showExportMenu by remember { mutableStateOf(false) }
     var invoiceToDelete by remember { mutableStateOf<Invoice?>(null) }
 
@@ -113,34 +118,46 @@ fun InvoiceListScreen(
             }
         }
     ) { padding ->
-        if (invoices.isEmpty()) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-                    .padding(32.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = "Nenhuma nota cadastrada.\nToque em + para adicionar a primeira.",
-                    textAlign = TextAlign.Center,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        } else {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding),
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                items(invoices, key = { it.id }) { invoice ->
-                    InvoiceCard(
-                        invoice = invoice,
-                        onClick = { onInvoiceClick(invoice) },
-                        onDelete = { invoiceToDelete = invoice }
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+        ) {
+            YearSelector(
+                years = availableYears,
+                selected = selectedYear,
+                onSelect = { viewModel.setYear(it) }
+            )
+
+            if (invoices.isEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .padding(32.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "Nenhuma nota em $selectedYear.\nToque em + para adicionar.",
+                        textAlign = TextAlign.Center,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    items(invoices, key = { it.id }) { invoice ->
+                        InvoiceCard(
+                            invoice = invoice,
+                            onClick = { onInvoiceClick(invoice) },
+                            onDelete = { invoiceToDelete = invoice }
+                        )
+                    }
                 }
             }
         }
@@ -162,6 +179,39 @@ fun InvoiceListScreen(
                 TextButton(onClick = { invoiceToDelete = null }) { Text("Cancelar") }
             }
         )
+    }
+}
+
+@Composable
+private fun YearSelector(
+    years: List<Int>,
+    selected: Int,
+    onSelect: (Int) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Box(
+        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+    ) {
+        OutlinedButton(onClick = { expanded = true }) {
+            Icon(Icons.Filled.DateRange, contentDescription = null)
+            Spacer(Modifier.width(8.dp))
+            Text("Ano: $selected")
+            Icon(Icons.Filled.ArrowDropDown, contentDescription = null)
+        }
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false }
+        ) {
+            years.forEach { year ->
+                DropdownMenuItem(
+                    text = { Text(year.toString()) },
+                    onClick = {
+                        onSelect(year)
+                        expanded = false
+                    }
+                )
+            }
+        }
     }
 }
 

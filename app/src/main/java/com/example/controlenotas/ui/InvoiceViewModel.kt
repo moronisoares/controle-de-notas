@@ -8,8 +8,12 @@ import com.example.controlenotas.data.Invoice
 import com.example.controlenotas.data.InvoiceDao
 import com.example.controlenotas.util.MonthSummary
 import com.example.controlenotas.util.buildMonthlySummaries
+import com.example.controlenotas.util.currentInvoiceYear
+import com.example.controlenotas.util.yearOf
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -17,12 +21,33 @@ import java.io.File
 
 class InvoiceViewModel(private val dao: InvoiceDao) : ViewModel() {
 
-    val invoices: StateFlow<List<Invoice>> = dao.getAll()
+    private val allInvoices: StateFlow<List<Invoice>> = dao.getAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    val monthlySummaries: StateFlow<List<MonthSummary>> = dao.getAll()
+    private val _selectedYear = MutableStateFlow(currentInvoiceYear())
+    val selectedYear: StateFlow<Int> = _selectedYear
+
+    /** Anos que possuem notas, sempre incluindo o ano atual, em ordem decrescente. */
+    val availableYears: StateFlow<List<Int>> = allInvoices
+        .map { list ->
+            val years = list.map { yearOf(it.invoiceDate) }.toMutableSet()
+            years.add(currentInvoiceYear())
+            years.sortedDescending()
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), listOf(currentInvoiceYear()))
+
+    /** Notas do ano selecionado (usadas na lista e nas exportações). */
+    val invoices: StateFlow<List<Invoice>> = combine(allInvoices, _selectedYear) { list, year ->
+        list.filter { yearOf(it.invoiceDate) == year }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val monthlySummaries: StateFlow<List<MonthSummary>> = invoices
         .map { buildMonthlySummaries(it) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    fun setYear(year: Int) {
+        _selectedYear.value = year
+    }
 
     fun addInvoice(
         category: Category,
@@ -63,7 +88,7 @@ class InvoiceViewModel(private val dao: InvoiceDao) : ViewModel() {
         }
     }
 
-    fun getInvoice(id: Long): Invoice? = invoices.value.firstOrNull { it.id == id }
+    fun getInvoice(id: Long): Invoice? = allInvoices.value.firstOrNull { it.id == id }
 }
 
 class InvoiceViewModelFactory(private val dao: InvoiceDao) : ViewModelProvider.Factory {
