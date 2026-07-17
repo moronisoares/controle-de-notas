@@ -21,8 +21,8 @@ private val fileNameFormat = SimpleDateFormat("yyyyMMdd_HHmmss", Locale("pt", "B
  * Monta o conteúdo do CSV com os dados das notas.
  *
  * Separador ";" e decimal "," (padrão do Excel em pt-BR). O arquivo é
- * gravado com a codificação ISO-8859-1 (ANSI), que faz o Excel brasileiro
- * exibir os acentos corretamente.
+ * gravado em UTF-8 com BOM, que faz o Excel, o Google Sheets e os
+ * visualizadores de celular exibirem os acentos corretamente.
  */
 fun buildCsv(invoices: List<Invoice>): String {
     val sb = StringBuilder()
@@ -123,7 +123,9 @@ fun exportAndShare(context: Context, invoices: List<Invoice>) {
 
     ZipOutputStream(BufferedOutputStream(FileOutputStream(zipFile))).use { zos ->
         zos.putNextEntry(ZipEntry("notas.csv"))
-        zos.write(buildCsv(invoices).toByteArray(Charsets.ISO_8859_1))
+        // BOM UTF-8 para que o Excel reconheça a codificação e mostre os acentos.
+        zos.write(byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte()))
+        zos.write(buildCsv(invoices).toByteArray(Charsets.UTF_8))
         zos.closeEntry()
 
         zos.putNextEntry(ZipEntry("relatorio.html"))
