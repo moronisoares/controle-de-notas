@@ -109,7 +109,8 @@ fun InvoiceListScreen(
     val workInfos by workManager
         .getWorkInfosForUniqueWorkLiveData(ExportWorker.UNIQUE_NAME)
         .observeAsState(emptyList())
-    val exportInfo = workInfos.lastOrNull()
+    // Uma exportação em andamento tem prioridade sobre o resultado da anterior.
+    val exportInfo = workInfos.firstOrNull { !it.state.isFinished } ?: workInfos.lastOrNull()
     val exporting = exportInfo?.state == WorkInfo.State.RUNNING ||
         exportInfo?.state == WorkInfo.State.ENQUEUED
 
