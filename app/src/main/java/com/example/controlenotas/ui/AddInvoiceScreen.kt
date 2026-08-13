@@ -72,11 +72,16 @@ import coil.compose.AsyncImage
 import com.example.controlenotas.data.Category
 import com.example.controlenotas.data.Invoice
 import com.example.controlenotas.data.isPdfPath
+import com.example.controlenotas.util.CnpjLookupResult
 import com.example.controlenotas.util.NfceLookupResult
 import com.example.controlenotas.util.formatCents
+import com.example.controlenotas.util.formatCnpj
+import com.example.controlenotas.util.isAccessKeyCheckDigitValid
+import com.example.controlenotas.util.lookupCnpj
 import com.example.controlenotas.util.formatInvoiceDate
 import com.example.controlenotas.util.importAttachment
 import com.example.controlenotas.util.lookupNfce
+import com.example.controlenotas.util.parseAccessKey
 import com.example.controlenotas.util.parseCentsOrNull
 import com.example.controlenotas.util.parsePdfInvoice
 import com.example.controlenotas.util.renderPdfFirstPage
@@ -123,9 +128,52 @@ fun AddInvoiceScreen(
     val isPdf = attachmentPath?.let { isPdfPath(it) } == true
     val editingId = existing?.id ?: 0L
 
+    // Só acusa erro quando já foram digitados os 44 dígitos, para não ficar
+    // vermelho enquanto o usuário ainda está no meio da digitação.
+    val invalidKeyTyped = remember(invoiceCode) {
+        val digits = invoiceCode.filter { it.isDigit() }
+        !invoiceCode.contains("http", ignoreCase = true) &&
+            digits.length == 44 &&
+            !isAccessKeyCheckDigitValid(digits)
+    }
+
     // Aviso de nota repetida: refeito sempre que o código muda.
     LaunchedEffect(invoiceCode, editingId) {
         duplicateCode = viewModel.isDuplicatedCode(invoiceCode, editingId)
+    }
+
+    /**
+     * Aproveita o que a própria chave de acesso já carrega quando a consulta da
+     * nota não é possível: mês/ano de emissão e o CNPJ do emitente (que vira o
+     * nome do estabelecimento e a categoria, via consulta pública de CNPJ).
+     * A data não é alterada — a chave não diz o dia.
+     */
+    suspend fun fillFromAccessKey(code: String, prefix: String): String {
+        val info = parseAccessKey(code)
+            ?: return if (code.filter { it.isDigit() }.length == 44) {
+                "$prefix A chave digitada não é válida — confira os 44 dígitos."
+            } else {
+                "$prefix Informe a chave de acesso completa (44 dígitos) ou leia o QR Code."
+            }
+
+        val details = mutableListOf("nota de ${info.periodLabel}")
+
+        when (val result = lookupCnpj(info.cnpj)) {
+            is CnpjLookupResult.Success -> {
+                val company = result.company
+                if (description.isBlank()) description = company.name.take(60)
+                company.category?.let { category ->
+                    if (selectedCategory == null) selectedCategory = category
+                }
+                details += company.name
+            }
+
+            CnpjLookupResult.NotFound,
+            is CnpjLookupResult.Failed -> details += "CNPJ ${formatCnpj(info.cnpj)}"
+        }
+
+        return "$prefix Chave válida: ${details.joinToString(", ")}. " +
+            "Confira a data e digite o valor."
     }
 
     /** Busca os dados da nota no site da Sefaz e preenche o que ainda está vazio. */
@@ -153,13 +201,21 @@ fun AddInvoiceScreen(
                     sefazStatus = "Dados da Sefaz preenchidos. Confira antes de salvar."
                 }
 
+                // Sem o QR Code (ou com a nota já fora da base da Sefaz) ainda dá
+                // para aproveitar a própria chave: ela carrega o mês/ano e o CNPJ
+                // de quem emitiu. Só o valor é que não tem como descobrir.
                 NfceLookupResult.NotFound ->
-                    sefazStatus = "A Sefaz não tem mais esta nota na consulta pública " +
-                        "(notas antigas saem da base). Preencha manualmente."
+                    sefazStatus = fillFromAccessKey(
+                        code,
+                        prefix = "A Sefaz não tem mais esta nota na consulta pública."
+                    )
 
                 NfceLookupResult.NeedsQrCode ->
-                    sefazStatus = "Para consultar, leia o QR Code da nota. Só a chave " +
-                        "digitada não basta: a Sefaz exige o código do QR."
+                    sefazStatus = fillFromAccessKey(
+                        code,
+                        prefix = "A Sefaz só consulta pela chave com captcha, " +
+                            "então o valor precisa ser digitado."
+                    )
 
                 is NfceLookupResult.Failed -> sefazStatus = result.message
             }
@@ -370,10 +426,12 @@ fun AddInvoiceScreen(
                 onValueChange = { invoiceCode = it },
                 label = { Text("Código / chave de acesso") },
                 placeholder = { Text("Leia o QR Code ou digite a chave") },
-                isError = duplicateCode,
+                isError = duplicateCode || invalidKeyTyped,
                 supportingText = {
                     when {
                         duplicateCode -> Text("Já existe uma nota cadastrada com este código.")
+                        // O dígito verificador da chave denuncia erro de digitação na hora.
+                        invalidKeyTyped -> Text("Chave de 44 dígitos inválida — confira os números.")
                         invoiceCode.isBlank() -> Text("Leia o QR Code para preencher o resto sozinho.")
                         else -> Unit
                     }
