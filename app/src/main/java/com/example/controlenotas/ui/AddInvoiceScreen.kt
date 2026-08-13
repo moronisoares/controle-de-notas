@@ -124,6 +124,7 @@ fun AddInvoiceScreen(
     var duplicateCode by remember { mutableStateOf(false) }
     var consultingSefaz by remember { mutableStateOf(false) }
     var sefazStatus by remember { mutableStateOf<String?>(null) }
+    var showFullscreen by remember { mutableStateOf(false) }
 
     val isPdf = attachmentPath?.let { isPdfPath(it) } == true
     val editingId = existing?.id ?: 0L
@@ -376,6 +377,15 @@ fun AddInvoiceScreen(
     val canSave = attachmentPath != null && selectedCategory != null &&
         parsedCents != null && parsedCents > 0 && !duplicateCode
 
+    val fullscreenPath = attachmentPath
+    if (showFullscreen && fullscreenPath != null) {
+        FullscreenAttachmentDialog(
+            path = fullscreenPath,
+            isPdf = isPdf,
+            onDismiss = { showFullscreen = false }
+        )
+    }
+
     if (showDatePicker) {
         val dateState = rememberDatePickerState(initialSelectedDateMillis = invoiceDateMillis)
         DatePickerDialog(
@@ -480,8 +490,21 @@ fun AddInvoiceScreen(
                 isPdf = isPdf,
                 pdfPreview = pdfPreview,
                 busy = readingPdf,
-                onClick = { if (isPdf) launchFilePicker() else launchCamera() }
+                // Com anexo, o toque abre em tela cheia para conferir a nota; a
+                // troca fica nos botões abaixo. Sem anexo, vai direto à câmera.
+                onClick = {
+                    if (attachmentPath != null) showFullscreen = true else launchCamera()
+                }
             )
+
+            if (attachmentPath != null) {
+                Text(
+                    text = "Toque na imagem para ver em tela cheia. " +
+                        "Use os botões abaixo para trocar o anexo.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(
