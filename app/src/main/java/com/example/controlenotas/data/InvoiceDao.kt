@@ -26,4 +26,11 @@ interface InvoiceDao {
     /** Exportação: ordem cronológica, da mais antiga para a mais recente. */
     @Query("SELECT * FROM invoices ORDER BY invoiceDate ASC, createdAt ASC")
     suspend fun getAllForExport(): List<Invoice>
+
+    /**
+     * Códigos já cadastrados, exceto o da nota que está sendo editada.
+     * Usado para impedir o cadastro da mesma nota duas vezes.
+     */
+    @Query("SELECT invoiceCode FROM invoices WHERE invoiceCode <> '' AND id <> :ignoreId")
+    suspend fun getCodesExcept(ignoreId: Long): List<String>
 }

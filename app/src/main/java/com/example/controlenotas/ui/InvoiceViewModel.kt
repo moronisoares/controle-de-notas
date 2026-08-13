@@ -9,6 +9,7 @@ import com.example.controlenotas.data.InvoiceDao
 import com.example.controlenotas.util.MonthSummary
 import com.example.controlenotas.util.buildMonthlySummaries
 import com.example.controlenotas.util.currentInvoiceYear
+import com.example.controlenotas.util.invoiceIdentity
 import com.example.controlenotas.util.monthOf
 import com.example.controlenotas.util.yearOf
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -147,6 +148,18 @@ class InvoiceViewModel(private val dao: InvoiceDao) : ViewModel() {
     }
 
     fun getInvoice(id: Long): Invoice? = allInvoices.value.firstOrNull { it.id == id }
+
+    /**
+     * Verdadeiro quando [code] já pertence a outra nota. A comparação usa a chave
+     * de acesso de 44 dígitos, então a mesma nota lida de formas diferentes
+     * (URL do QR Code ou chave digitada) continua sendo reconhecida como repetida.
+     */
+    suspend fun isDuplicatedCode(code: String, ignoreId: Long): Boolean {
+        val trimmed = code.trim()
+        if (trimmed.isBlank()) return false
+        val identity = invoiceIdentity(trimmed)
+        return dao.getCodesExcept(ignoreId).any { invoiceIdentity(it) == identity }
+    }
 
     companion object {
         /** Quantidade de notas carregadas por página na lista. */

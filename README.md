@@ -21,7 +21,19 @@ pelo contador.
   - Cursos e treinamentos
 - Informar o valor (R$) da nota.
 - Campo opcional de descrição.
-- Ler o QR Code / código de barras da nota (chave de acesso).
+- **O código da nota é o primeiro campo da tela.** Ao ler o QR Code, o app
+  consulta a nota no site público da Sefaz-SP e preenche sozinho valor, data,
+  estabelecimento e categoria — é só conferir e salvar.
+  - Funciona com o código lido do **QR Code** (ele traz a assinatura que a Sefaz
+    exige). Uma chave de 44 dígitos digitada à mão não serve: nesse caso o site
+    da Sefaz pede captcha.
+  - Notas antigas saem da consulta pública da Sefaz; nesse caso o app avisa e os
+    campos são preenchidos manualmente.
+  - É o único momento em que o app acessa a internet (permissão `INTERNET`).
+    As notas continuam guardadas apenas no aparelho.
+- **Não é possível cadastrar a mesma nota duas vezes**: o app compara a chave de
+  acesso de 44 dígitos, então a mesma nota lida de formas diferentes (URL do QR
+  Code ou chave digitada) continua sendo reconhecida como repetida.
 - Listagem das notas **da mais recente para a mais antiga**, com **rolagem
   infinita** de 8 notas por página. A lista não carrega as imagens, para ficar
   rápida mesmo com muitas notas.

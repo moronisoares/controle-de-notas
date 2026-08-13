@@ -3,6 +3,12 @@
 
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!--
+      Usada apenas quando o usuário toca em "Consultar" na tela de cadastro, para
+      buscar os dados da nota no site público da Sefaz. As notas continuam
+      guardadas somente no aparelho: nada é enviado para nenhum servidor.
+    -->
+    <uses-permission android:name="android.permission.INTERNET" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
 
     <application

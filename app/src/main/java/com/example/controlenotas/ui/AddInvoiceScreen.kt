@@ -28,6 +28,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.QrCodeScanner
@@ -71,12 +72,15 @@ import coil.compose.AsyncImage
 import com.example.controlenotas.data.Category
 import com.example.controlenotas.data.Invoice
 import com.example.controlenotas.data.isPdfPath
+import com.example.controlenotas.util.NfceLookupResult
 import com.example.controlenotas.util.formatCents
 import com.example.controlenotas.util.formatInvoiceDate
 import com.example.controlenotas.util.importAttachment
+import com.example.controlenotas.util.lookupNfce
 import com.example.controlenotas.util.parseCentsOrNull
 import com.example.controlenotas.util.parsePdfInvoice
 import com.example.controlenotas.util.renderPdfFirstPage
+import com.example.controlenotas.util.supportsLookup
 import com.example.controlenotas.util.todayInvoiceMillis
 import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
@@ -112,7 +116,56 @@ fun AddInvoiceScreen(
     var readingPdf by remember { mutableStateOf(false) }
     var readStatus by remember { mutableStateOf<String?>(null) }
 
+    var duplicateCode by remember { mutableStateOf(false) }
+    var consultingSefaz by remember { mutableStateOf(false) }
+    var sefazStatus by remember { mutableStateOf<String?>(null) }
+
     val isPdf = attachmentPath?.let { isPdfPath(it) } == true
+    val editingId = existing?.id ?: 0L
+
+    // Aviso de nota repetida: refeito sempre que o código muda.
+    LaunchedEffect(invoiceCode, editingId) {
+        duplicateCode = viewModel.isDuplicatedCode(invoiceCode, editingId)
+    }
+
+    /** Busca os dados da nota no site da Sefaz e preenche o que ainda está vazio. */
+    fun consultSefaz() {
+        val code = invoiceCode.trim()
+        if (code.isBlank()) return
+        scope.launch {
+            consultingSefaz = true
+            sefazStatus = null
+            when (val result = lookupNfce(code)) {
+                is NfceLookupResult.Success -> {
+                    val data = result.data
+                    data.totalCents?.let { cents ->
+                        if (parseCentsOrNull(costText) == null) costText = formatCents(cents)
+                    }
+                    data.invoiceDateMillis?.let { millis ->
+                        if (existing == null) invoiceDateMillis = millis
+                    }
+                    data.category?.let { category ->
+                        if (selectedCategory == null) selectedCategory = category
+                    }
+                    data.emitter?.let { emitter ->
+                        if (description.isBlank()) description = emitter.take(60)
+                    }
+                    sefazStatus = "Dados da Sefaz preenchidos. Confira antes de salvar."
+                }
+
+                NfceLookupResult.NotFound ->
+                    sefazStatus = "A Sefaz não tem mais esta nota na consulta pública " +
+                        "(notas antigas saem da base). Preencha manualmente."
+
+                NfceLookupResult.NeedsQrCode ->
+                    sefazStatus = "Para consultar, leia o QR Code da nota. Só a chave " +
+                        "digitada não basta: a Sefaz exige o código do QR."
+
+                is NfceLookupResult.Failed -> sefazStatus = result.message
+            }
+            consultingSefaz = false
+        }
+    }
 
     /**
      * Preenche apenas os campos ainda vazios com o que foi lido do PDF, para não
@@ -221,7 +274,15 @@ fun AddInvoiceScreen(
     }
 
     val scanCode = rememberLauncherForActivityResult(ScanContract()) { result ->
-        result.contents?.let { invoiceCode = it }
+        result.contents?.let { scanned ->
+            invoiceCode = scanned
+            scope.launch {
+                // Nota repetida: avisa e nem consulta a Sefaz.
+                val duplicated = viewModel.isDuplicatedCode(scanned, editingId)
+                duplicateCode = duplicated
+                if (!duplicated && supportsLookup(scanned)) consultSefaz()
+            }
+        }
     }
 
     fun launchScan() {
@@ -257,7 +318,7 @@ fun AddInvoiceScreen(
 
     val parsedCents = parseCentsOrNull(costText)
     val canSave = attachmentPath != null && selectedCategory != null &&
-        parsedCents != null && parsedCents > 0
+        parsedCents != null && parsedCents > 0 && !duplicateCode
 
     if (showDatePicker) {
         val dateState = rememberDatePickerState(initialSelectedDateMillis = invoiceDateMillis)
@@ -302,6 +363,60 @@ fun AddInvoiceScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            // O código vem primeiro: lendo o QR Code é possível puxar da Sefaz o
+            // valor, a data e o estabelecimento, e o resto da tela já vem pronto.
+            OutlinedTextField(
+                value = invoiceCode,
+                onValueChange = { invoiceCode = it },
+                label = { Text("Código / chave de acesso") },
+                placeholder = { Text("Leia o QR Code ou digite a chave") },
+                isError = duplicateCode,
+                supportingText = {
+                    when {
+                        duplicateCode -> Text("Já existe uma nota cadastrada com este código.")
+                        invoiceCode.isBlank() -> Text("Leia o QR Code para preencher o resto sozinho.")
+                        else -> Unit
+                    }
+                },
+                trailingIcon = {
+                    IconButton(onClick = { launchScan() }) {
+                        Icon(
+                            Icons.Filled.QrCodeScanner,
+                            contentDescription = "Ler código da nota"
+                        )
+                    }
+                },
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            Button(
+                onClick = { consultSefaz() },
+                enabled = invoiceCode.isNotBlank() && !consultingSefaz && !duplicateCode,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                if (consultingSefaz) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.onPrimary
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text("Consultando a Sefaz...")
+                } else {
+                    Icon(Icons.Filled.CloudDownload, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Consultar nota na Sefaz")
+                }
+            }
+
+            sefazStatus?.let { status ->
+                Text(
+                    text = status,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
             AttachmentPreview(
                 attachmentPath = attachmentPath,
                 isPdf = isPdf,
@@ -401,22 +516,6 @@ fun AddInvoiceScreen(
                 value = description,
                 onValueChange = { description = it },
                 label = { Text("Descrição (opcional)") },
-                modifier = Modifier.fillMaxWidth()
-            )
-
-            OutlinedTextField(
-                value = invoiceCode,
-                onValueChange = { invoiceCode = it },
-                label = { Text("Código / chave de acesso (opcional)") },
-                placeholder = { Text("Leia o QR Code ou digite a chave") },
-                trailingIcon = {
-                    IconButton(onClick = { launchScan() }) {
-                        Icon(
-                            Icons.Filled.QrCodeScanner,
-                            contentDescription = "Ler código da nota"
-                        )
-                    }
-                },
                 modifier = Modifier.fillMaxWidth()
             )
 
