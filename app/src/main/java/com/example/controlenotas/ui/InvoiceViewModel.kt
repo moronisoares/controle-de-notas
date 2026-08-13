@@ -149,6 +149,34 @@ class InvoiceViewModel(private val dao: InvoiceDao) : ViewModel() {
 
     fun getInvoice(id: Long): Invoice? = allInvoices.value.firstOrNull { it.id == id }
 
+    // ------------------------------------------------------------ exportação
+
+    /**
+     * Controle do aviso de "exportação concluída".
+     *
+     * Fica aqui, e não na tela, porque a tela é recriada toda vez que o usuário
+     * troca de aba ou volta de outro cadastro. Guardado lá, o aviso reaparecia
+     * sozinho ao navegar, mostrando de novo o resultado de uma exportação antiga.
+     */
+    private var exportAwaitingAnnouncement = false
+    private val announcedExportIds = mutableSetOf<String>()
+
+    /** Chamado quando o usuário pede uma exportação. */
+    fun onExportRequested() {
+        exportAwaitingAnnouncement = true
+    }
+
+    /**
+     * Verdadeiro uma única vez, e apenas para uma exportação pedida nesta sessão:
+     * abrir o app com uma exportação antiga concluída não mostra aviso nenhum.
+     */
+    fun shouldAnnounceExport(id: String): Boolean {
+        if (!exportAwaitingAnnouncement) return false
+        if (!announcedExportIds.add(id)) return false
+        exportAwaitingAnnouncement = false
+        return true
+    }
+
     /**
      * Verdadeiro quando [code] já pertence a outra nota. A comparação usa a chave
      * de acesso de 44 dígitos, então a mesma nota lida de formas diferentes

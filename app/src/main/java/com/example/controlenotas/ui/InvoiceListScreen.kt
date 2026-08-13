@@ -115,7 +115,7 @@ fun InvoiceListScreen(
     val exporting = exportInfo?.state == WorkInfo.State.RUNNING ||
         exportInfo?.state == WorkInfo.State.ENQUEUED
 
-    ExportResultHandler(exportInfo, snackbarHostState)
+    ExportResultHandler(viewModel, exportInfo, snackbarHostState)
 
     // Rolagem infinita: carrega a próxima página ao chegar perto do fim da lista.
     val reachedEnd by remember {
@@ -167,6 +167,7 @@ fun InvoiceListScreen(
                                 text = { Text("Exportar CSV") },
                                 onClick = {
                                     showExportMenu = false
+                                    viewModel.onExportRequested()
                                     ExportWorker.enqueue(
                                         context = context,
                                         withAttachments = false,
@@ -179,6 +180,7 @@ fun InvoiceListScreen(
                                 text = { Text("Exportar CSV + anexos") },
                                 onClick = {
                                     showExportMenu = false
+                                    viewModel.onExportRequested()
                                     ExportWorker.enqueue(
                                         context = context,
                                         withAttachments = true,
@@ -307,24 +309,22 @@ private fun periodLabel(year: Int, month: Int?): String =
  */
 @Composable
 private fun ExportResultHandler(
+    viewModel: InvoiceViewModel,
     exportInfo: WorkInfo?,
     snackbarHostState: SnackbarHostState
 ) {
     val context = LocalContext.current
-    // Uma exportação que já estava concluída ao abrir a tela (ex.: o app foi
-    // reaberto depois) não deve disparar o aviso de novo.
-    var handledId by remember {
-        mutableStateOf(exportInfo?.takeIf { it.state.isFinished }?.id?.toString())
-    }
 
     LaunchedEffect(exportInfo?.id, exportInfo?.state) {
         val info = exportInfo ?: return@LaunchedEffect
+        if (!info.state.isFinished) return@LaunchedEffect
         val id = info.id.toString()
-        if (handledId == id) return@LaunchedEffect
+        // Só avisa sobre a exportação que o usuário pediu, e só uma vez. Sem
+        // isto o aviso voltava a cada troca de aba.
+        if (!viewModel.shouldAnnounceExport(id)) return@LaunchedEffect
 
         when (info.state) {
             WorkInfo.State.SUCCEEDED -> {
-                handledId = id
                 val path = info.outputData.getString(ExportWorker.KEY_OUTPUT_PATH)
                     ?: return@LaunchedEffect
                 val count = info.outputData.getInt(ExportWorker.KEY_COUNT, 0)
@@ -343,7 +343,6 @@ private fun ExportResultHandler(
             }
 
             WorkInfo.State.FAILED -> {
-                handledId = id
                 val error = info.outputData.getString(ExportWorker.KEY_ERROR)
                     ?: "Não foi possível exportar."
                 snackbarHostState.showSnackbar(
