@@ -1,3 +1,15 @@
+# Verificacao automatica do codigo.
+#
+# Este workflow NAO publica APK para instalacao. O runner do GitHub nao tem a
+# chave de assinatura do projeto (keystore.properties fica fora do Git), entao
+# o APK gerado aqui sai assinado com uma chave de depuracao aleatoria, criada
+# na hora. Um APK assim nao instala por cima de uma versao ja instalada: o
+# Android recusa com "App nao instalado".
+#
+# Os APKs para instalar sao gerados na maquina de desenvolvimento, assinados
+# com a chave fixa, e publicados nas Releases (ex.: a tag v1.7).
+#
+# O artefato abaixo continua disponivel apenas para conferencia do build.
 name: Build APK
 
 on:
@@ -6,7 +18,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build:
@@ -27,22 +39,23 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x ./gradlew
 
+      - name: Run unit tests
+        run: ./gradlew testDebugUnitTest --no-daemon --stacktrace
+
       - name: Build debug APK
         run: ./gradlew assembleDebug --no-daemon --stacktrace
 
+      - name: Upload test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: relatorio-testes
+          path: app/build/reports/tests/testDebugUnitTest
+
+      # Apenas para conferencia do build -- NAO use este APK para instalar no
+      # celular: a assinatura e diferente da usada nas Releases.
       - name: Upload APK as build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ControleDeNotas-debug
+          name: ControleDeNotas-debug-NAO-INSTALAVEL
           path: app/build/outputs/apk/debug/app-debug.apk
-
-      - name: Publish APK to the "latest" release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: latest
-          name: Controle de Notas - APK (última versão)
-          body: |
-            APK de depuração instalável do app Controle de Notas.
-            Baixe o arquivo app-debug.apk no seu celular e instale
-            (permita "instalar de fontes desconhecidas" se solicitado).
-          files: app/build/outputs/apk/debug/app-debug.apk
