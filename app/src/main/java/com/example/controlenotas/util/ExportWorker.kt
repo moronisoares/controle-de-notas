@@ -72,10 +72,18 @@ class ExportWorker(
                     KEY_COUNT to invoices.size
                 )
             )
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
+            // Throwable e nao Exception de proposito: falta de memoria chega
+            // como OutOfMemoryError, que nao e uma Exception. Sem isto o
+            // trabalho morria sem aviso e a tela ficava "exportando" para sempre.
             notifier.safeCancel(Notifications.ID_PROGRESS)
             showFailureNotification(notifier)
-            Result.failure(workDataOf(KEY_ERROR to (e.message ?: "Falha ao exportar.")))
+            val reason = if (e is OutOfMemoryError) {
+                "Memoria insuficiente para gerar o arquivo."
+            } else {
+                e.message ?: "Falha ao exportar."
+            }
+            Result.failure(workDataOf(KEY_ERROR to reason))
         }
     }
 

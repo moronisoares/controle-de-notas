@@ -33,7 +33,10 @@ pelo contador.
   Basta tocar na notificação para compartilhar por e-mail, WhatsApp, Drive etc.
   - **CSV** (separador `;`, decimal `,`) para o contador.
   - **CSV + anexos**: pacote `.zip` com o CSV, um relatório HTML com as notas em
-    miniatura (inclusive a primeira página dos PDFs) e a pasta `anexos/`.
+    miniatura (inclusive a primeira página dos PDFs) e a pasta `anexos/` com os
+    arquivos originais. O relatório é gravado direto dentro do `.zip`, uma nota
+    por vez, e usa miniaturas — montar o HTML inteiro em memória com as fotos em
+    tamanho original estourava a memória do aparelho.
 
 ## Tecnologias (100% gratuitas e open source)
 

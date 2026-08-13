@@ -14,6 +14,7 @@ import com.example.controlenotas.data.isPdf
 import java.io.BufferedOutputStream
 import java.io.File
 import java.io.FileOutputStream
+import java.io.OutputStreamWriter
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -126,11 +127,13 @@ private fun attachmentCell(invoice: Invoice): String {
                 "<img src=\"data:image/jpeg;base64,$base64\" alt=\"nota em PDF\">$link"
             }
         } else {
-            val mime = attachmentMimeType(invoice.imagePath)
-            val base64 = Base64.encodeToString(file.readBytes(), Base64.NO_WRAP)
-            "<img src=\"data:$mime;base64,$base64\" alt=\"nota\">"
+            // Miniatura, nunca a foto original: o relatório mostra 200px de
+            // largura e a foto completa continua na pasta de anexos do .zip.
+            val thumb = imageThumbnailJpeg(file) ?: return "(sem anexo)"
+            val base64 = Base64.encodeToString(thumb, Base64.NO_WRAP)
+            "<img src=\"data:image/jpeg;base64,$base64\" alt=\"nota\">"
         }
-    } catch (e: Exception) {
+    } catch (e: Throwable) {
         "(sem anexo)"
     }
 }
@@ -184,9 +187,7 @@ fun writeZipFile(
         zos.write(buildCsv(invoices).toByteArray(Charsets.US_ASCII))
         zos.closeEntry()
 
-        // O HTML embute os anexos, então é montado nota a nota para reportar progresso.
-        val html = StringBuilder(htmlHeader())
-        var processed = 0
+        // Cópia dos anexos originais (streaming, sem carregar na memória).
         for (inv in invoices) {
             val attachment = File(inv.imagePath)
             if (attachment.exists()) {
@@ -194,14 +195,23 @@ fun writeZipFile(
                 attachment.inputStream().use { it.copyTo(zos) }
                 zos.closeEntry()
             }
-            html.append(htmlRow(inv))
+        }
+
+        // O relatório é escrito direto dentro do .zip, uma linha por vez. Montar
+        // o HTML inteiro em memória estourava a memória do aparelho: cada foto
+        // vira texto base64 e o total passava de 100 MB.
+        zos.putNextEntry(ZipEntry("relatorio.html"))
+        val writer = OutputStreamWriter(zos, Charsets.UTF_8)
+        writer.write(htmlHeader())
+        var processed = 0
+        for (inv in invoices) {
+            writer.write(htmlRow(inv))
+            writer.flush()
             processed++
             onProgress(processed, total)
         }
-        html.append(htmlFooter())
-
-        zos.putNextEntry(ZipEntry("relatorio.html"))
-        zos.write(html.toString().toByteArray(Charsets.UTF_8))
+        writer.write(htmlFooter())
+        writer.flush() // nunca fechar: fecharia o ZipOutputStream junto
         zos.closeEntry()
     }
 

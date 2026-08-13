@@ -3,8 +3,11 @@ package com.example.controlenotas.util
 import android.content.Context
 import android.database.Cursor
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Color
+import android.graphics.Matrix
 import android.graphics.pdf.PdfRenderer
+import android.media.ExifInterface
 import android.net.Uri
 import android.os.ParcelFileDescriptor
 import android.provider.OpenableColumns
@@ -107,6 +110,64 @@ fun renderPdfFirstPage(file: File, targetWidth: Int = 1000): Bitmap? {
         }
     } catch (e: Exception) {
         null
+    }
+}
+
+/**
+ * Reduz uma foto para uma miniatura JPEG usada no relatório HTML.
+ *
+ * A tabela do relatório mostra as imagens com no máximo 200px de largura, então
+ * embutir a foto original (vários MB) só desperdiça memória e espaço — era o que
+ * estourava a memória na exportação. O arquivo original continua no .zip, na
+ * pasta de anexos.
+ */
+fun imageThumbnailJpeg(file: File, maxWidth: Int = 900, quality: Int = 70): ByteArray? {
+    if (!file.exists()) return null
+    return try {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(file.absolutePath, bounds)
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+
+        // inSampleSize só aceita potências de 2; decodifica já reduzido, sem
+        // nunca carregar a imagem inteira na memória.
+        var sample = 1
+        while (bounds.outWidth / (sample * 2) >= maxWidth) sample *= 2
+
+        val options = BitmapFactory.Options().apply { inSampleSize = sample }
+        val decoded = BitmapFactory.decodeFile(file.absolutePath, options) ?: return null
+        val bitmap = applyExifRotation(file, decoded)
+        try {
+            ByteArrayOutputStream().use { out ->
+                bitmap.compress(Bitmap.CompressFormat.JPEG, quality, out)
+                out.toByteArray()
+            }
+        } finally {
+            bitmap.recycle()
+            if (bitmap !== decoded) decoded.recycle()
+        }
+    } catch (e: Throwable) {
+        null
+    }
+}
+
+/** Aplica a rotação gravada no EXIF; sem isso a foto sai deitada no relatório. */
+private fun applyExifRotation(file: File, bitmap: Bitmap): Bitmap {
+    return try {
+        val orientation = ExifInterface(file.absolutePath).getAttributeInt(
+            ExifInterface.TAG_ORIENTATION,
+            ExifInterface.ORIENTATION_NORMAL
+        )
+        val degrees = when (orientation) {
+            ExifInterface.ORIENTATION_ROTATE_90 -> 90f
+            ExifInterface.ORIENTATION_ROTATE_180 -> 180f
+            ExifInterface.ORIENTATION_ROTATE_270 -> 270f
+            else -> 0f
+        }
+        if (degrees == 0f) return bitmap
+        val matrix = Matrix().apply { postRotate(degrees) }
+        Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+    } catch (e: Throwable) {
+        bitmap
     }
 }
 
