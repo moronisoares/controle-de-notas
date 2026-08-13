@@ -45,6 +45,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
@@ -327,9 +328,14 @@ private fun ExportResultHandler(
                 val path = info.outputData.getString(ExportWorker.KEY_OUTPUT_PATH)
                     ?: return@LaunchedEffect
                 val count = info.outputData.getInt(ExportWorker.KEY_COUNT, 0)
+                // Sem duration/withDismissAction o Material 3 usa Indefinite
+                // quando existe um botão de ação, e o aviso ficava na tela para
+                // sempre, sem como fechar.
                 val result = snackbarHostState.showSnackbar(
                     message = "Exportação concluída ($count nota(s)).",
-                    actionLabel = "Compartilhar"
+                    actionLabel = "Compartilhar",
+                    withDismissAction = true,
+                    duration = SnackbarDuration.Long
                 )
                 if (result == SnackbarResult.ActionPerformed) {
                     runCatching { context.startActivity(buildShareChooser(context, File(path))) }
@@ -340,7 +346,11 @@ private fun ExportResultHandler(
                 handledId = id
                 val error = info.outputData.getString(ExportWorker.KEY_ERROR)
                     ?: "Não foi possível exportar."
-                snackbarHostState.showSnackbar(error)
+                snackbarHostState.showSnackbar(
+                    message = error,
+                    withDismissAction = true,
+                    duration = SnackbarDuration.Long
+                )
             }
 
             else -> Unit
