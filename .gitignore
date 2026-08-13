@@ -10,3 +10,10 @@ build/
 
 # Locally built APK copy (distributed via GitHub Releases instead)
 /ControleDeNotas.apk
+
+# Chave de assinatura do app: NUNCA versionar. O arquivo .jks e a senha ficam
+# guardados no OneDrive (ControleNotas-APK/keystore). Sem essa chave nao e
+# possivel atualizar o app instalado -- so reinstalando do zero.
+/keystore.properties
+*.jks
+*.keystore

@@ -1,7 +1,24 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("com.google.devtools.ksp")
+}
+
+/**
+ * Chave de assinatura fixa (keystore.properties, fora do Git).
+ *
+ * Assinar sempre com a mesma chave e o que permite instalar uma versao nova por
+ * cima da anterior sem desinstalar o app. Quando o arquivo nao existe (ex.: um
+ * clone novo do repositorio), o build cai na chave de depuracao padrao do
+ * Android e o APK gerado NAO atualiza uma instalacao feita com a chave fixa.
+ */
+val keystorePropertiesFile = rootProject.file("keystore.properties")
+val keystoreProperties = Properties().apply {
+    if (keystorePropertiesFile.exists()) {
+        keystorePropertiesFile.inputStream().use { load(it) }
+    }
 }
 
 android {
@@ -17,13 +34,33 @@ android {
         vectorDrawables { useSupportLibrary = true }
     }
 
+    signingConfigs {
+        if (keystorePropertiesFile.exists()) {
+            create("stable") {
+                storeFile = file(keystoreProperties.getProperty("storeFile"))
+                storePassword = keystoreProperties.getProperty("storePassword")
+                keyAlias = keystoreProperties.getProperty("keyAlias")
+                keyPassword = keystoreProperties.getProperty("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
+        val stableSigning = signingConfigs.findByName("stable")
+
+        debug {
+            // O APK distribuido e o de depuracao; assinar com a chave fixa e o
+            // que torna as atualizacoes instalaveis por cima.
+            if (stableSigning != null) signingConfig = stableSigning
+        }
+
         release {
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            if (stableSigning != null) signingConfig = stableSigning
         }
     }
 
