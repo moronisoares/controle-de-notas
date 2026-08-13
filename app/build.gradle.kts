@@ -12,8 +12,8 @@ android {
         applicationId = "com.example.controlenotas"
         minSdk = 24
         targetSdk = 34
-        versionCode = 7
-        versionName = "1.6"
+        versionCode = 8
+        versionName = "1.7"
         vectorDrawables { useSupportLibrary = true }
     }
 
@@ -47,6 +47,12 @@ android {
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
+            // PDFBox-Android traz metadados que colidem com outras dependências.
+            excludes += "/META-INF/DEPENDENCIES"
+            excludes += "/META-INF/LICENSE"
+            excludes += "/META-INF/LICENSE.txt"
+            excludes += "/META-INF/NOTICE"
+            excludes += "/META-INF/NOTICE.txt"
         }
     }
 }
@@ -72,9 +78,17 @@ dependencies {
     implementation("androidx.room:room-ktx:2.6.1")
     ksp("androidx.room:room-compiler:2.6.1")
 
+    implementation("androidx.compose.runtime:runtime-livedata")
+
     implementation("io.coil-kt:coil-compose:2.7.0")
 
     implementation("com.journeyapps:zxing-android-embedded:4.3.0")
+
+    // Exportação em segundo plano com progresso e notificação.
+    implementation("androidx.work:work-runtime-ktx:2.9.1")
+
+    // Leitura do texto de notas em PDF (Apache 2.0, sem custo).
+    implementation("com.tom-roush:pdfbox-android:2.0.27.0")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
 }

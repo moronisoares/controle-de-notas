@@ -19,9 +19,11 @@ interface InvoiceDao {
     @Delete
     suspend fun delete(invoice: Invoice)
 
-    @Query("SELECT * FROM invoices ORDER BY createdAt DESC")
+    /** Lista principal: da nota mais recente para a mais antiga. */
+    @Query("SELECT * FROM invoices ORDER BY invoiceDate DESC, createdAt DESC")
     fun getAll(): Flow<List<Invoice>>
 
-    @Query("SELECT * FROM invoices ORDER BY createdAt ASC")
+    /** Exportação: ordem cronológica, da mais antiga para a mais recente. */
+    @Query("SELECT * FROM invoices ORDER BY invoiceDate ASC, createdAt ASC")
     suspend fun getAllForExport(): List<Invoice>
 }

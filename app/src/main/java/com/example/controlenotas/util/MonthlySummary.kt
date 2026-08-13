@@ -5,11 +5,6 @@ import com.example.controlenotas.data.Invoice
 import java.util.Calendar
 import java.util.TimeZone
 
-private val monthNames = arrayOf(
-    "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
-    "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
-)
-
 /** Total gasto em uma categoria dentro de um mês. */
 data class CategoryTotal(
     val category: Category,
@@ -58,7 +53,7 @@ fun buildMonthlySummaries(invoices: List<Invoice>): List<MonthSummary> {
             MonthSummary(
                 year = year,
                 month = month,
-                label = "${monthNames[month - 1]} $year",
+                label = "${monthName(month)} $year",
                 totalCents = monthInvoices.sumOf { it.costCents },
                 count = monthInvoices.size,
                 byCategory = byCategory

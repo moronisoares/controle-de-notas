@@ -9,6 +9,7 @@ import com.example.controlenotas.data.InvoiceDao
 import com.example.controlenotas.util.MonthSummary
 import com.example.controlenotas.util.buildMonthlySummaries
 import com.example.controlenotas.util.currentInvoiceYear
+import com.example.controlenotas.util.monthOf
 import com.example.controlenotas.util.yearOf
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -27,6 +28,13 @@ class InvoiceViewModel(private val dao: InvoiceDao) : ViewModel() {
     private val _selectedYear = MutableStateFlow(currentInvoiceYear())
     val selectedYear: StateFlow<Int> = _selectedYear
 
+    /** Mês selecionado (1-12) ou null para "todos os meses" do ano. */
+    private val _selectedMonth = MutableStateFlow<Int?>(null)
+    val selectedMonth: StateFlow<Int?> = _selectedMonth
+
+    /** Quantas notas estão visíveis na lista (rolagem infinita). */
+    private val _visibleCount = MutableStateFlow(PAGE_SIZE)
+
     /** Anos que possuem notas, sempre incluindo o ano atual, em ordem decrescente. */
     val availableYears: StateFlow<List<Int>> = allInvoices
         .map { list ->
@@ -36,17 +44,67 @@ class InvoiceViewModel(private val dao: InvoiceDao) : ViewModel() {
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), listOf(currentInvoiceYear()))
 
-    /** Notas do ano selecionado (usadas na lista e nas exportações). */
-    val invoices: StateFlow<List<Invoice>> = combine(allInvoices, _selectedYear) { list, year ->
-        list.filter { yearOf(it.invoiceDate) == year }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    /** Notas do ano selecionado, sem o filtro de mês (base do resumo mensal). */
+    private val yearInvoices: StateFlow<List<Invoice>> =
+        combine(allInvoices, _selectedYear) { list, year ->
+            list.filter { yearOf(it.invoiceDate) == year }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    val monthlySummaries: StateFlow<List<MonthSummary>> = invoices
+    /**
+     * Notas do filtro atual (ano, e mês quando escolhido), da mais recente para a
+     * mais antiga. É o conjunto usado na lista e nas exportações.
+     */
+    val filteredInvoices: StateFlow<List<Invoice>> =
+        combine(yearInvoices, _selectedMonth) { list, month ->
+            val filtered = if (month == null) list else list.filter { monthOf(it.invoiceDate) == month }
+            filtered.sortedWith(
+                compareByDescending<Invoice> { it.invoiceDate }.thenByDescending { it.createdAt }
+            )
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** Página atual da lista: apenas as primeiras [_visibleCount] notas do filtro. */
+    val visibleInvoices: StateFlow<List<Invoice>> =
+        combine(filteredInvoices, _visibleCount) { list, count ->
+            list.take(count)
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** Verdadeiro enquanto ainda houver notas fora da página atual. */
+    val canLoadMore: StateFlow<Boolean> =
+        combine(filteredInvoices, _visibleCount) { list, count ->
+            list.size > count
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    /** Meses (1-12) que possuem notas no ano selecionado, em ordem crescente. */
+    val availableMonths: StateFlow<List<Int>> = yearInvoices
+        .map { list -> list.map { monthOf(it.invoiceDate) }.distinct().sorted() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val monthlySummaries: StateFlow<List<MonthSummary>> = yearInvoices
         .map { buildMonthlySummaries(it) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     fun setYear(year: Int) {
+        if (_selectedYear.value == year) return
         _selectedYear.value = year
+        _selectedMonth.value = null
+        resetPaging()
+    }
+
+    /** [month] em 1-12, ou null para mostrar o ano inteiro. */
+    fun setMonth(month: Int?) {
+        if (_selectedMonth.value == month) return
+        _selectedMonth.value = month
+        resetPaging()
+    }
+
+    /** Carrega a próxima página da lista (rolagem infinita). */
+    fun loadMore() {
+        if (_visibleCount.value >= filteredInvoices.value.size) return
+        _visibleCount.value += PAGE_SIZE
+    }
+
+    private fun resetPaging() {
+        _visibleCount.value = PAGE_SIZE
     }
 
     fun addInvoice(
@@ -89,6 +147,11 @@ class InvoiceViewModel(private val dao: InvoiceDao) : ViewModel() {
     }
 
     fun getInvoice(id: Long): Invoice? = allInvoices.value.firstOrNull { it.id == id }
+
+    companion object {
+        /** Quantidade de notas carregadas por página na lista. */
+        const val PAGE_SIZE = 8
+    }
 }
 
 class InvoiceViewModelFactory(private val dao: InvoiceDao) : ViewModelProvider.Factory {

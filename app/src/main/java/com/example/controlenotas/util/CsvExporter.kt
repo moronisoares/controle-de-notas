@@ -1,15 +1,19 @@
 package com.example.controlenotas.util
 
+import android.content.ClipData
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.util.Base64
 import androidx.core.content.FileProvider
 import com.example.controlenotas.data.Category
 import com.example.controlenotas.data.Invoice
+import com.example.controlenotas.data.attachmentFileName
+import com.example.controlenotas.data.attachmentMimeType
+import com.example.controlenotas.data.isPdf
 import java.io.BufferedOutputStream
 import java.io.File
 import java.io.FileOutputStream
-import java.text.Normalizer
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -18,13 +22,16 @@ import java.util.zip.ZipOutputStream
 
 private val fileNameFormat = SimpleDateFormat("yyyyMMdd_HHmmss", Locale("pt", "BR"))
 
+/** Pasta dos anexos dentro do pacote .zip exportado. */
+private const val ZIP_ATTACHMENTS_DIR = "anexos"
+
 /**
  * Monta o conteúdo do CSV com os dados das notas.
  *
  * Separador ";" e decimal "," (padrão do Excel em pt-BR). Todos os acentos e
  * caracteres especiais são removidos (texto ASCII puro), garantindo que a
  * abertura funcione em qualquer programa, sem quebrar os caracteres.
- * Não inclui o nome do arquivo da foto — apenas o código de acesso da nota.
+ * Não inclui o nome do arquivo do anexo — apenas o código de acesso da nota.
  */
 fun buildCsv(invoices: List<Invoice>): String {
     val sb = StringBuilder()
@@ -37,18 +44,10 @@ fun buildCsv(invoices: List<Invoice>): String {
             inv.invoiceCode,
             inv.description
         )
-        sb.append(fields.joinToString(";") { escapeCsv(stripSpecialChars(it)) })
+        sb.append(fields.joinToString(";") { escapeCsv(foldToAsciiSingleLine(it)) })
         sb.append("\r\n")
     }
     return sb.toString()
-}
-
-/** Remove acentos e qualquer caractere fora do ASCII imprimível. */
-private fun stripSpecialChars(text: String): String {
-    val normalized = Normalizer.normalize(text, Normalizer.Form.NFD)
-    return normalized
-        .replace(Regex("\\p{Mn}+"), "")        // marcas de acento (ex.: ~ de ã)
-        .replace(Regex("[^\\x20-\\x7E]"), "")   // demais caracteres nao-ASCII
 }
 
 private fun escapeCsv(field: String): String {
@@ -57,8 +56,12 @@ private fun escapeCsv(field: String): String {
     return if (needsQuote) "\"$escaped\"" else escaped
 }
 
-/** Monta um relatório HTML com as fotos das notas visíveis em miniatura. */
-fun buildHtml(invoices: List<Invoice>): String {
+/**
+ * Cabeçalho do relatório HTML (até a linha de títulos da tabela). O relatório
+ * mostra os anexos das notas em miniatura; notas em PDF entram com a primeira
+ * página renderizada como imagem.
+ */
+private fun htmlHeader(): String {
     val sb = StringBuilder()
     sb.append("<!DOCTYPE html>\n")
     sb.append("<html lang=\"pt-BR\">\n<head>\n<meta charset=\"UTF-8\">\n")
@@ -70,24 +73,30 @@ fun buildHtml(invoices: List<Invoice>): String {
     sb.append("th,td{border:1px solid #ccc;padding:8px;text-align:left;vertical-align:top;}")
     sb.append("th{background:#00695c;color:#fff;}")
     sb.append("img{max-width:200px;height:auto;border:1px solid #ddd;}")
+    sb.append(".pdf{font-size:12px;color:#555;display:block;margin-top:4px;}")
     sb.append("</style>\n</head>\n<body>\n")
     sb.append("<h1>Relatório de notas</h1>\n")
     sb.append("<table>\n<tr>")
-    sb.append("<th>Data da nota</th><th>Categoria</th><th>Valor (R$)</th><th>Código / Chave de acesso</th><th>Descrição</th><th>Foto</th>")
+    sb.append("<th>Data da nota</th><th>Categoria</th><th>Valor (R$)</th><th>Código / Chave de acesso</th><th>Descrição</th><th>Anexo</th>")
     sb.append("</tr>\n")
-    for (inv in invoices) {
-        sb.append("<tr>")
-        sb.append("<td>").append(escapeHtml(formatInvoiceDate(inv.invoiceDate))).append("</td>")
-        sb.append("<td>").append(escapeHtml(Category.fromName(inv.category).displayName)).append("</td>")
-        sb.append("<td>").append(escapeHtml(formatCents(inv.costCents))).append("</td>")
-        sb.append("<td>").append(codeCell(inv.invoiceCode)).append("</td>")
-        sb.append("<td>").append(escapeHtml(inv.description)).append("</td>")
-        sb.append("<td>").append(imageTag(inv.imagePath)).append("</td>")
-        sb.append("</tr>\n")
-    }
-    sb.append("</table>\n</body>\n</html>\n")
     return sb.toString()
 }
+
+/** Uma linha do relatório HTML (parte mais pesada: embute o anexo em base64). */
+private fun htmlRow(inv: Invoice): String {
+    val sb = StringBuilder()
+    sb.append("<tr>")
+    sb.append("<td>").append(escapeHtml(formatInvoiceDate(inv.invoiceDate))).append("</td>")
+    sb.append("<td>").append(escapeHtml(Category.fromName(inv.category).displayName)).append("</td>")
+    sb.append("<td>").append(escapeHtml(formatCents(inv.costCents))).append("</td>")
+    sb.append("<td>").append(codeCell(inv.invoiceCode)).append("</td>")
+    sb.append("<td>").append(escapeHtml(inv.description)).append("</td>")
+    sb.append("<td>").append(attachmentCell(inv)).append("</td>")
+    sb.append("</tr>\n")
+    return sb.toString()
+}
+
+private fun htmlFooter(): String = "</table>\n</body>\n</html>\n"
 
 /** Renderiza o código; se for uma URL (QR da NFC-e), vira um link clicável. */
 private fun codeCell(code: String): String {
@@ -100,15 +109,29 @@ private fun codeCell(code: String): String {
     }
 }
 
-/** Incorpora a foto no próprio HTML (base64), garantindo que ela sempre apareça. */
-private fun imageTag(imagePath: String): String {
-    val file = File(imagePath)
-    if (!file.exists()) return "(sem foto)"
+/** Incorpora o anexo no próprio HTML (base64), garantindo que ele sempre apareça. */
+private fun attachmentCell(invoice: Invoice): String {
+    val file = File(invoice.imagePath)
+    if (!file.exists()) return "(sem anexo)"
     return try {
-        val base64 = Base64.encodeToString(file.readBytes(), Base64.NO_WRAP)
-        "<img src=\"data:image/jpeg;base64,$base64\" alt=\"nota\">"
+        if (invoice.isPdf) {
+            val page = pdfFirstPageJpeg(file)
+            val link = "<span class=\"pdf\">PDF: " +
+                escapeHtml(attachmentFileName(invoice.imagePath)) +
+                " (na pasta $ZIP_ATTACHMENTS_DIR/)</span>"
+            if (page == null) {
+                link
+            } else {
+                val base64 = Base64.encodeToString(page, Base64.NO_WRAP)
+                "<img src=\"data:image/jpeg;base64,$base64\" alt=\"nota em PDF\">$link"
+            }
+        } else {
+            val mime = attachmentMimeType(invoice.imagePath)
+            val base64 = Base64.encodeToString(file.readBytes(), Base64.NO_WRAP)
+            "<img src=\"data:$mime;base64,$base64\" alt=\"nota\">"
+        }
     } catch (e: Exception) {
-        "(sem foto)"
+        "(sem anexo)"
     }
 }
 
@@ -118,72 +141,95 @@ private fun escapeHtml(text: String): String =
         .replace(">", "&gt;")
         .replace("\"", "&quot;")
 
+/** Pasta de saída das exportações (limpa arquivos antigos para não acumular). */
+fun exportsDir(context: Context): File {
+    val dir = File(context.cacheDir, "exports").apply { mkdirs() }
+    val cutoff = System.currentTimeMillis() - 24 * 60 * 60 * 1000L
+    runCatching {
+        dir.listFiles()?.forEach { file ->
+            if (file.lastModified() < cutoff) file.delete()
+        }
+    }
+    return dir
+}
+
+fun exportFileName(extension: String): String =
+    "notas_${fileNameFormat.format(Date())}.$extension"
+
+/** Gera apenas o arquivo notas.csv (sem anexos) e devolve o arquivo criado. */
+fun writeCsvFile(context: Context, invoices: List<Invoice>): File {
+    val file = File(exportsDir(context), exportFileName("csv"))
+    file.writeBytes(buildCsv(invoices).toByteArray(Charsets.US_ASCII))
+    return file
+}
+
 /**
  * Gera um pacote .zip contendo:
- *  - notas.csv       (dados para auditoria, com acentos corretos)
- *  - relatorio.html  (tabela com as fotos das notas visíveis)
- *  - imagens/        (as fotos das notas)
+ *  - notas.csv       (dados para auditoria)
+ *  - relatorio.html  (tabela com os anexos das notas visíveis)
+ *  - anexos/         (as fotos e os PDFs das notas)
  *
- * e abre a folha de compartilhamento para envio ao contador.
+ * [onProgress] recebe (concluídos, total) a cada nota processada.
  */
-fun exportAndShare(context: Context, invoices: List<Invoice>) {
-    val dir = File(context.cacheDir, "exports").apply { mkdirs() }
-    val zipFile = File(dir, "notas_${fileNameFormat.format(Date())}.zip")
+fun writeZipFile(
+    context: Context,
+    invoices: List<Invoice>,
+    onProgress: (Int, Int) -> Unit = { _, _ -> }
+): File {
+    val file = File(exportsDir(context), exportFileName("zip"))
+    val total = invoices.size
 
-    ZipOutputStream(BufferedOutputStream(FileOutputStream(zipFile))).use { zos ->
+    ZipOutputStream(BufferedOutputStream(FileOutputStream(file))).use { zos ->
         zos.putNextEntry(ZipEntry("notas.csv"))
         zos.write(buildCsv(invoices).toByteArray(Charsets.US_ASCII))
         zos.closeEntry()
 
-        zos.putNextEntry(ZipEntry("relatorio.html"))
-        zos.write(buildHtml(invoices).toByteArray(Charsets.UTF_8))
-        zos.closeEntry()
-
+        // O HTML embute os anexos, então é montado nota a nota para reportar progresso.
+        val html = StringBuilder(htmlHeader())
+        var processed = 0
         for (inv in invoices) {
-            val image = File(inv.imagePath)
-            if (image.exists()) {
-                zos.putNextEntry(ZipEntry("imagens/${image.name}"))
-                image.inputStream().use { it.copyTo(zos) }
+            val attachment = File(inv.imagePath)
+            if (attachment.exists()) {
+                zos.putNextEntry(ZipEntry("$ZIP_ATTACHMENTS_DIR/${attachment.name}"))
+                attachment.inputStream().use { it.copyTo(zos) }
                 zos.closeEntry()
             }
+            html.append(htmlRow(inv))
+            processed++
+            onProgress(processed, total)
         }
+        html.append(htmlFooter())
+
+        zos.putNextEntry(ZipEntry("relatorio.html"))
+        zos.write(html.toString().toByteArray(Charsets.UTF_8))
+        zos.closeEntry()
     }
 
-    val uri = FileProvider.getUriForFile(
-        context,
-        "${context.packageName}.fileprovider",
-        zipFile
-    )
-
-    val intent = Intent(Intent.ACTION_SEND).apply {
-        type = "application/zip"
-        putExtra(Intent.EXTRA_STREAM, uri)
-        putExtra(Intent.EXTRA_SUBJECT, "Exportação de notas")
-        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-    }
-    context.startActivity(Intent.createChooser(intent, "Exportar notas"))
+    return file
 }
 
-/**
- * Gera apenas o arquivo notas.csv (sem fotos) e abre a folha de
- * compartilhamento. Contém somente os dados e o código de acesso da nota.
- */
-fun exportCsvOnly(context: Context, invoices: List<Invoice>) {
-    val dir = File(context.cacheDir, "exports").apply { mkdirs() }
-    val csvFile = File(dir, "notas_${fileNameFormat.format(Date())}.csv")
-    csvFile.writeBytes(buildCsv(invoices).toByteArray(Charsets.US_ASCII))
+/** Uri compartilhável (FileProvider) de um arquivo gerado pela exportação. */
+fun exportUri(context: Context, file: File): Uri =
+    FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
 
-    val uri = FileProvider.getUriForFile(
-        context,
-        "${context.packageName}.fileprovider",
-        csvFile
-    )
+/** Intent de compartilhamento já com o seletor de aplicativos. */
+fun buildShareChooser(context: Context, file: File): Intent {
+    val uri = exportUri(context, file)
+    val mime = if (file.extension.equals("zip", ignoreCase = true)) {
+        "application/zip"
+    } else {
+        "text/csv"
+    }
 
-    val intent = Intent(Intent.ACTION_SEND).apply {
-        type = "text/csv"
+    val send = Intent(Intent.ACTION_SEND).apply {
+        type = mime
         putExtra(Intent.EXTRA_STREAM, uri)
-        putExtra(Intent.EXTRA_SUBJECT, "Exportação de notas (CSV)")
+        putExtra(Intent.EXTRA_SUBJECT, "Exportação de notas")
+        clipData = ClipData.newRawUri("Exportação de notas", uri)
         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
     }
-    context.startActivity(Intent.createChooser(intent, "Exportar CSV"))
+
+    return Intent.createChooser(send, "Exportar notas").apply {
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    }
 }

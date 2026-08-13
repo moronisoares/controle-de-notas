@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">Controle de Notas</string>
+    <string name="open_pdf_label">Cadastrar nota no Controle de Notas</string>
 </resources>

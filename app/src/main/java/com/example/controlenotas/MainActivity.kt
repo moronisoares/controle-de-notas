@@ -1,8 +1,15 @@
 package com.example.controlenotas
 
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ReceiptLong
@@ -15,7 +22,13 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.ContextCompat
+import androidx.core.content.IntentCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import androidx.navigation.NavDestination
@@ -36,21 +49,64 @@ import com.example.controlenotas.ui.MonthlySummaryScreen
 import com.example.controlenotas.ui.theme.ControleNotasTheme
 
 class MainActivity : ComponentActivity() {
+
+    /** Arquivo recebido de outro app ("Abrir com" / compartilhar um PDF). */
+    private var incomingFile by mutableStateOf<Uri?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        incomingFile = extractSharedFile(intent)
+
         val dao = AppDatabase.getInstance(applicationContext).invoiceDao()
         setContent {
             ControleNotasTheme {
-                AppNavHost(factory = InvoiceViewModelFactory(dao))
+                AppNavHost(
+                    factory = InvoiceViewModelFactory(dao),
+                    incomingFile = incomingFile,
+                    onIncomingHandled = { incomingFile = null }
+                )
             }
+        }
+    }
+
+    /** O app usa launchMode singleTask: novos PDFs chegam por aqui. */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        extractSharedFile(intent)?.let { incomingFile = it }
+    }
+
+    private fun extractSharedFile(intent: Intent?): Uri? {
+        if (intent == null) return null
+        return when (intent.action) {
+            Intent.ACTION_VIEW -> intent.data
+            Intent.ACTION_SEND ->
+                IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java)
+            else -> null
         }
     }
 }
 
 @Composable
-private fun AppNavHost(factory: InvoiceViewModelFactory) {
+private fun AppNavHost(
+    factory: InvoiceViewModelFactory,
+    incomingFile: Uri?,
+    onIncomingHandled: () -> Unit
+) {
     val navController = rememberNavController()
     val viewModel: InvoiceViewModel = viewModel(factory = factory)
+
+    NotificationPermissionRequest()
+
+    // Arquivo pendente a ser anexado na tela de nova nota.
+    var pendingImport by remember { mutableStateOf<Uri?>(null) }
+
+    LaunchedEffect(incomingFile) {
+        val uri = incomingFile ?: return@LaunchedEffect
+        pendingImport = uri
+        onIncomingHandled()
+        navController.navigate(ROUTE_ADD) { launchSingleTop = true }
+    }
 
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = backStackEntry?.destination
@@ -100,8 +156,15 @@ private fun AppNavHost(factory: InvoiceViewModelFactory) {
             composable(ROUTE_ADD) {
                 AddInvoiceScreen(
                     viewModel = viewModel,
-                    onDone = { navController.popBackStack() },
-                    onBack = { navController.popBackStack() }
+                    importUri = pendingImport,
+                    onDone = {
+                        pendingImport = null
+                        navController.popBackStack()
+                    },
+                    onBack = {
+                        pendingImport = null
+                        navController.popBackStack()
+                    }
                 )
             }
             composable(
@@ -122,6 +185,25 @@ private fun AppNavHost(factory: InvoiceViewModelFactory) {
                 }
             }
         }
+    }
+}
+
+/** Android 13+ exige permissão para mostrar o aviso de exportação concluída. */
+@Composable
+private fun NotificationPermissionRequest() {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+
+    val context = LocalContext.current
+    val launcher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { /* sem permissão o app segue funcionando, apenas sem notificação */ }
+
+    LaunchedEffect(Unit) {
+        val granted = ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.POST_NOTIFICATIONS
+        ) == PackageManager.PERMISSION_GRANTED
+        if (!granted) launcher.launch(Manifest.permission.POST_NOTIFICATIONS)
     }
 }
 
